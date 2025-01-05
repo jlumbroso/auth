@@ -86,6 +86,12 @@ func (p *IdTokenGrantParams) getProvider(ctx context.Context, config *conf.Globa
 		issuer = provider.IssuerVercelMarketplace
 		acceptableClientIDs = append(acceptableClientIDs, config.External.VercelMarketplace.ClientID...)
 
+	case p.Provider == "orcid" || p.Issuer == "https://orcid.org":
+		cfg = &config.External.ORCID
+		providerType = "orcid"
+		issuer = "https://orcid.org"
+		acceptableClientIDs = append(acceptableClientIDs, config.External.ORCID.ClientID...)
+
 	default:
 		log.WithField("issuer", p.Issuer).WithField("client_id", p.ClientID).Warn("Use of POST /token with arbitrary issuer and client_id is deprecated for security reasons. Please switch to using the API with provider only!")
 
