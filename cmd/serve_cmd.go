@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/pkg/errors"
@@ -46,13 +47,13 @@ func serve(ctx context.Context) {
 	defer db.Close()
 
 	addr := net.JoinHostPort(config.API.Host, config.API.Port)
-	logrus.Infof("GoTrue API started on: %s", addr)
 
 	opts := []api.Option{
 		api.NewLimiterOptions(config),
 	}
 	a := api.NewAPIWithVersion(config, db, utilities.Version, opts...)
 	ah := reloader.NewAtomicHandler(a)
+	logrus.WithField("version", a.Version()).Infof("GoTrue API started on: %s", addr)
 
 	baseCtx, baseCancel := context.WithCancel(context.Background())
 	defer baseCancel()
@@ -105,7 +106,23 @@ func serve(ctx context.Context) {
 		}
 	}()
 
-	if err := httpSrv.ListenAndServe(); err != http.ErrServerClosed {
+	lc := net.ListenConfig{
+		Control: func(network, address string, c syscall.RawConn) error {
+			var serr error
+			if err := c.Control(func(fd uintptr) {
+				// hard-coded syscall.SO_REUSEPORT since it doesn't seem to be defined in different environments
+				serr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, 0x200, 1)
+			}); err != nil {
+				return err
+			}
+			return serr
+		},
+	}
+	listener, err := lc.Listen(ctx, "tcp", addr)
+	if err != nil {
 		log.WithError(err).Fatal("http server listen failed")
+	}
+	if err := httpSrv.Serve(listener); err != nil {
+		log.WithError(err).Fatal("http server serve failed")
 	}
 }
